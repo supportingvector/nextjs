@@ -26,51 +26,82 @@ export default function UploadPage() {
     }
 
     setUploadStatus('Uploading...');
+    
+    // Prepare the FormData to send in the request
+    const formData = new FormData();
+    formData.append('file', selectedFile);
 
-    // Simulate upload progress
-    const simulateUpload = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(simulateUpload);
-          setUploadStatus('Upload successful');
-          handleProcessing();
+    // Set the headers with API key
+    const headers = {
+      'X-API-KEY': 'kelingongnnn',  // API key header
+    };
+
+    console.log("uploading")
+    // Send the file to the backend using fetch with headers
+    fetch('http://localhost:5000/uploadinput', {
+      method: 'POST',
+      body: formData,
+      headers: headers,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Upload failed');
         }
-        return Math.min(prev + 20, 100);
+        return response.json();
+      })
+      .then((data) => {
+        // Assuming the server returns some information about processing status or the image URL
+        setUploadStatus('Upload successful');
+        handleProcessing(data);
+      })
+      .catch((error) => {
+        setUploadStatus('Upload failed');
+        console.error(error);
       });
-    }, 500);
   };
 
-  const handleProcessing = () => {
+  const handleProcessing = (data) => {
     setProcessingStatus('Generating...');
-
-    // Simulate image processing
-    setTimeout(() => {
-      // Convert selected image to grayscale (client-side processing)
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-        img.onload = () => {
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const data = imageData.data;
-
-          for (let i = 0; i < data.length; i += 4) {
-            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-            data[i] = data[i + 1] = data[i + 2] = avg;
+  
+    const imageUrl = `http://localhost:5000/outputimg/202412191129.png`;
+    const maxAttempts = 24; // 2分钟内尝试的最大次数 (每5秒一次，共24次)
+    let attempts = 0;
+  
+    // 每隔5秒发送一次请求，最多发送24次（2分钟）
+    const intervalId = setInterval(() => {
+      attempts += 1;
+      if (attempts > maxAttempts) {
+        // 超过最大尝试次数，停止请求并提示用户
+        clearInterval(intervalId);
+        setProcessedImage(null);
+        setProcessingStatus(
+          '请刷新后重试，或直接联系店铺客服工作人员。'
+        );
+        return;
+      }
+  
+      fetch(imageUrl, { method: 'GET' })
+        .then((response) => {
+          if (response.ok) {
+            // 文件存在，获取图片
+            return response.blob(); // 获取二进制数据
+          } else {
+            // 文件未生成，继续尝试
+            throw new Error('File not found');
           }
-
-          ctx.putImageData(imageData, 0, 0);
-          setProcessedImage(canvas.toDataURL('image/jpeg'));
+        })
+        .then((blob) => {
+          // 将 Blob 数据转换为图片 URL
+          const url = URL.createObjectURL(blob);
+          setProcessedImage(url); // 显示生成的图片
           setProcessingStatus('Generation complete');
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(selectedFile);
-    }, 2000); // Simulate 2 seconds processing time
+          clearInterval(intervalId); // 成功获取到文件，停止定时请求
+        })
+        .catch((error) => {
+          // 如果文件未生成，继续请求
+          console.log('Error fetching image:', error);
+        });
+    }, 5000); // 每5秒发送一次请求
   };
 
   return (
@@ -140,7 +171,7 @@ export default function UploadPage() {
             <img
               src={processedImage}
               alt="Processed"
-              style={{ width: '100%', borderRadius: '8px', filter: 'grayscale(100%)' }}
+              style={{ width: '100%', borderRadius: '8px' }}
             />
             <a
               href={processedImage}
